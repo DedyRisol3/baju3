@@ -8,6 +8,7 @@ use App\Http\Controllers\Admin\ProductController as AdminProductController;
 use App\Http\Controllers\Admin\OrderController as AdminOrderController;
 use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
 use App\Http\Controllers\Auth\GoogleAuthController;
+use App\Http\Controllers\RajaOngkirController;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Http\Request;
 
@@ -86,4 +87,11 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(fun
     Route::get('/pesanan/{orderId}/edit', [AdminOrderController::class, 'edit'])->name('pesanan.edit');
     Route::patch('/pesanan/{orderId}', [AdminOrderController::class, 'update'])->name('pesanan.update');
     Route::delete('/pesanan/{orderId}', [AdminOrderController::class, 'destroy'])->name('pesanan.destroy');
+
+
+    Route::get('/cities/{provinceId}', [RajaOngkirController::class, 'getCities']);
+    Route::get('/districts/{cityId}', [RajaOngkirController::class, 'getDistricts']);
+    Route::post('/check-ongkir', [RajaOngkirController::class, 'checkOngkir']);
 });
+
+

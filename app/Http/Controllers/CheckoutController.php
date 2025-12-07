@@ -6,6 +6,7 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\View\View;
 use Xendit\Xendit;
@@ -13,9 +14,7 @@ use Exception;
 
 class CheckoutController extends Controller
 {
-    /**
-     * Menampilkan halaman checkout dengan ringkasan pesanan.
-     */
+    
     public function index(): View|RedirectResponse
     {
         $cartItems = session('cart', []);
@@ -28,24 +27,40 @@ class CheckoutController extends Controller
             ((int)($item['quantity'] ?? 0)) * ((float)($item['priceRaw'] ?? 0))
         );
 
+        // Mengambil data provinsi untuk dropdown RajaOngkir
+        $provinces = [];
+        $response = Http::withHeaders([
+            'Accept' => 'application/json',
+            'key' => config('rajaongkir.api_key'),
+        ])->get('https://rajaongkir.komerce.id/api/v1/destination/province');
+            
+        if ($response->successful()) {
+            $provinces = $response->json()['data'] ?? [];
+        }
+
         return view('checkout', [
             'cartItems' => $cartItems,
-            'totalPrice' => $totalPrice,
+            'totalPrice' => $totalPrice, 
+            'provinces' => $provinces,
         ]);
     }
 
-    /**
-     * Menyimpan data pesanan dan membuat invoice Xendit.
-     */
+    
     public function store(Request $request): RedirectResponse
     {
         $validatedData = $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|email|max:255',
             'phone' => 'required|string|max:20',
-            'address' => 'required|string',
-            'courier' => 'required|string',
-            'payment_method' => 'required|string',
+            'payment_method' => 'required|string', // 'xendit'
+
+            // Validasi data pengiriman baru
+            'province_id' => 'required|string',
+            'city_id' => 'required|string',
+            'district_id' => 'required|string',
+            'courier' => 'required|string', // 
+            'shipping_cost' => 'required|numeric|min:0',
+            'shipping_etd' => 'nullable|string',
         ]);
 
         $cartItems = session('cart', []);
@@ -53,23 +68,35 @@ class CheckoutController extends Controller
             return redirect()->route('keranjang.index')->with('error', 'Keranjang Anda kosong.');
         }
 
-        $totalPrice = collect($cartItems)->sum(fn($item) =>
+        $subtotal = collect($cartItems)->sum(fn($item) =>
             ((int)($item['quantity'] ?? 0)) * ((float)($item['priceRaw'] ?? 0))
         );
 
-        // Simpan pesanan ke database
-        $order = Order::create([
-            'user_id' => Auth::id(),
-            'name' => $validatedData['name'],
-            'email' => $validatedData['email'],
-            'phone' => $validatedData['phone'],
-            'address' => $validatedData['address'],
-            'courier' => $validatedData['courier'],
-            'payment_method' => $validatedData['payment_method'],
-            'total_price' => $totalPrice,
-            'status' => 'pending',
-        ]);
+        $order = new Order();
+        $order->user_id = Auth::id();
+        
+        // Data pelanggan
+        $order->name = $validatedData['name'];
+        $order->email = $validatedData['email'];
+        $order->phone = $validatedData['phone'];
+        $order->payment_method = $validatedData['payment_method'];
 
+        // Data pengiriman RajaOngkir
+        $order->province_id = $validatedData['province_id'];
+        $order->city_id = $validatedData['city_id'];
+        $order->district_id = $validatedData['district_id'];
+        $order->courier = $validatedData['courier'];
+        $order->shipping_cost = $validatedData['shipping_cost'];
+        $order->shipping_etd = $validatedData['shipping_etd'] ?? null;
+
+        // Total harga adalah Subtotal
+        $order->total_price = $subtotal + $validatedData['shipping_cost']; 
+        
+        $order->status = 'pending'; // Akan di-update ke 'waiting_payment' di bawah
+        $order->save();
+
+
+        // Simpan item-item pesanan
         foreach ($cartItems as $item) {
             OrderItem::create([
                 'order_id' => $order->id,
@@ -85,15 +112,15 @@ class CheckoutController extends Controller
 
         session()->forget('cart');
 
-        // 🔑 Gunakan API Key dari .env
+        // Gunakan API Key dari .env
         Xendit::setApiKey(config('services.xendit.secret_key'));
 
-        // 📦 Buat invoice baru
+        // Buat invoice baru
         $params = [
             'external_id' => 'order-' . $order->id,
             'payer_email' => $order->email,
             'description' => 'Pembayaran Pesanan #' . $order->id,
-            'amount' => $order->total_price,
+            'amount' => $order->total_price, 
             'success_redirect_url' => route('checkout.success'),
             'failure_redirect_url' => route('checkout.failed'),
         ];
@@ -120,9 +147,7 @@ class CheckoutController extends Controller
         }
     }
 
-    /**
-     * Mengecek saldo akun Xendit (opsional untuk testing koneksi API).
-     */
+
     public function checkBalance()
     {
         Xendit::setApiKey(config('services.xendit.secret_key'));
@@ -135,3 +160,4 @@ class CheckoutController extends Controller
         }
     }
 }
+

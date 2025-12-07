@@ -76,7 +76,6 @@
                             </div>
                             <div><strong>Kurir:</strong> {{ strtoupper($order->courier ?? 'N/A') }}</div>
                             <div><strong>Metode Pembayaran:</strong> {{ ucfirst($order->payment_method ?? 'N/A') }}</div>
-                            <div style="grid-column: 1 / -1;"><strong>Alamat Pengiriman:</strong> {{ $order->address ?? 'N/A' }}</div>
                         </div>
                     </div>
 
